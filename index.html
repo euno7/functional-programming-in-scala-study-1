@@ -45,15 +45,17 @@
                 data-separator-vertical="^\n>>>\n">
                 <script type="text/template">
 ### Part I
-## 関数型プログラミングの基礎
+## 関数型プログラミングの  
+## 基礎
 
 ---
 
-## 1. 関数型プログラミングとは
+## 1.関数型プログラミング
+## とは
 
 ---
 
-関数型プログラミングでは
+関数型プログラミングでは  
 *純粋関数*のみを使ってプログラミングする
 
 純粋関数とは*副作用のない*関数
@@ -114,6 +116,225 @@ p: Paymentsをモック化するなどしてテストは可能だが
 
 ---
 
+#### 副作用を(一部を除いて)排除したコード
+
+~~~scala
+class Cafe {
+  // 戻り値をCoffeeとChargeに分け、決済情報を値として返すように
+  def buyCoffee(cc: CreditCard): (Coffee, Charge) = {
+    val cup = new Coffee()
+    (cup, Charge(cc, cup.price))
+  }
+}
+
+/** 決済情報を表すcase class */
+case class Charge(cc: CreditCard, amount: Double) {
+  /** 別のChargeに対して、同じCreditCardであれば1個のChargeにまとめる関数 */
+  def combine(other: Charge): Charge =
+    if (cc == other.cc) // if式は値を返せる
+      Charge(cc, amount + other.amount)
+    else
+      throw new Exception("Can't combine charge to different cards")
+}
+~~~
+
+---
+
+#### リスト1-3
+buyCoffee関数を再利用して  
+n杯のコーヒーを購入する関数を追加
+
+~~~scala
+class Cafe {
+  def buyCoffee(cc: CreditCard): (Coffee, Charge) = {
+    // 省略
+  }
+
+  def buyCoffees(cc: CreditCard, n: Int): (List[Coffee], Charge) = {
+    // buyCoffeeをn個実行してList化
+    val purchases: List[(Coffee, Charge] = List.fill(n)(buyCoffee(cc))
+    // List[(Coffee, Charge)]をList[Coffee]とList[Charge]のタプルに変換
+    val (coffees, charges) = purchases.unzip
+    // reduce関数でList[Charge]を1個のChargeに畳み込み
+    // (reduceは関数をパラメータに取る高階関数)
+    (cooffees, chages.reduce((c1, c2) => c1.combine(c2))
+  }
+}
+~~~
+
+~~~scala
+// 複数のChargeをクレジットカードごとにまとめる関数
+def coalesce(charges: List[Charge]): List[Charge] =
+  charges.groupBy(_.cc).values.map(_.reduce(_ combine _)).toList
+~~~
+
+---
+
+### 改善したポイント
+1. buyCoffeeを再利用できる
+1. Chargeとして切りだされることで、個別にテストが可能
+1. Chargeが具象クラスなので、モック等を利用せずとも直接テストが可能
+
+---
+
+## 純粋関数
+
+~~~scala
+f: (A => B)  // 入力型A,出力型Bの関数f
+~~~
+あらゆるA型の値aに対して、1個のbの値に関連付けられ、  
+bはaの値によってのみ決定され、どんな外部状態の変化に  
+影響を受けない (つまり*副作用がない*)
+
+---
+
+## 参照透過性
+
+式eがあり、すべてのプログラムpにおいて  
+pの意味に影響を与えることなく  
+p内のすべてのeをeの評価結果と  
+置き換えることができたら、*eは参照透過*。
+
+関数fがあり、式f(x)が参照透過なすべてのxに対し  
+参照透過であるとしたら、*fは純粋関数*
+
+---
+
+# どういう  
+# 意味やねん
+
+---
+
+## とても簡単な参照透過の例
+
+### 式 3 + 4 は参照透過である。
+
+#### 理由
+
+プログラム全体のどの場面においても、  
+式 3 + 4 はその評価結果である 7 に  
+プログラムの意味に影響を与えることなく  
+置き換えることができるから。
+
+~~~scala
+List.fill(3 + 4)(buyCoffee(cc))  // (1)
+List.fill(7)(buyCoffee(cc))  // (2)
+~~~
+置き換えてもプログラムの意味や結果は変わっていない
+
+---
+
+## とても簡単な純粋関数の例
+
+### 下記の関数は純粋関数である
+~~~scala
+def square(n: Int) = n * n
+~~~
+
+#### 理由
+n自体が参照透過であれば、square関数も参照透過となる
+
+---
+
+~~~scala
+// 以下REPLで実行
+scala> def square(n: Int) = n * n
+square: (n: Int)Int
+
+scala> 5 + square(3 + 4)
+res0: Int = 54
+
+scala> 5 + square(7)
+res1: Int = 54
+
+scala> 5 + (3 + 4) * (3 + 4)
+res2: Int = 54
+
+scala> 5 + 7 * 7
+res3: Int = 54
+~~~
+すべてプログラムの意味や結果は変わっていない
+
+---
+
+## 非純粋関数の例
+
+### StringBuilder#append
+
+~~~scala
+// 以下REPLで実行
+scala> val x = new StringBuilder("Hello")
+x: StringBuilder = Hello
+
+scala> val r1 = x.append(", World").toString  // (1)
+r1: String = Hello, World
+
+scala> val r2 = x.append(", World").toString  // (1)と同じ呼び出し
+r2: String = Hello, World, World              // (1)とは結果が異なる
+~~~
+(1)と(2)は同じ呼び出しであるにもかかわらず、  
+結果が異なるため、評価結果と置き換えると  
+意味が変わってしまう
+
+---
+
+~~~scala
+// 以下REPLで実行
+scala> val x = new StringBuilder("Hello")
+x: StringBuilder = Hello
+
+scala> val a = x.append(", World")
+a: StringBuilder = Hello, World
+
+scala> val r1 = a.toString // x.append(", World")を評価結果であるaに置き換え
+r1: String = Hello, World
+
+scala> val r2 = a.toString // x.append(", World")を評価結果であるaに置き換え
+r2: String = Hello, World  // 結果が変わってしまった
+~~~
+
+---
+
+### リスト1-1を改めて
+~~~scala
+class Cafe {
+  def buyCoffee(cc: CreditCard): Coffee = {
+    val cup = new Coffee()
+    cc.charge(cup.price)    // 副作用！
+    cup
+  }
+}
+~~~
+buyCoffee関数が純粋であるためには、任意のpに対し
+~~~scala
+p(buyCoffee(cc)) // 関数自体の呼び出し
+p(new Coffee())  // 評価結果への置き換え
+~~~
+がプログラムの意味を変えずに  
+置き換えられなければならない
+
+buyCoffee関数が何らかの決済処理がされているのに対し、  
+new Coffee()はそのようなことは行われていないため、
+buyCoffee関数は*非純粋関数*である
+
+---
+
+## 純粋関数のみを使うことで
+
+- 変更による影響が評価対象の式のみになり、それ以外の要因を考える必要がない
+- 入力によってのみ評価結果が決まるため、関数同士の合成がしやすく、コードの再利用性が上がる
+
+---
+
+## 関数型プログラミング
+
+### *純粋関数*のみを使って
+### プログラミングを行うこと
+
+現実の開発では、ユーザからの入力や
+データベースの更新など  本章で*副作用*として挙げられた
+処理も必要になるが、これらの処理を副作用なく表現する  
+手法について、以降の章で言及される模様。
 
 
                 </script>
